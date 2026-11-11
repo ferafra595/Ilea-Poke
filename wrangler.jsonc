@@ -4,7 +4,7 @@
   "compatibility_date": "2026-09-01",
   "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": ["/api/*", "/admin", "/admin/*"] },
   "d1_databases": [
-    { "binding": "DB", "database_name": "ilea-poke", "database_id": "INSERISCI_ID_DATABASE_D1" }
+    { "binding": "DB", "database_name": "ilea-poke", "database_id": "dd941133-3f23-49a0-9654-9fe2f77aae1e" }
   ],
   "vars": { "APP_ORIGIN": "", "RESTAURANT_NAME": "Ilèa Resort" }
 }
