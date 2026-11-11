@@ -1,0 +1,10 @@
+{
+  "name": "ilea-poke",
+  "main": "worker.js",
+  "compatibility_date": "2026-09-01",
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": ["/api/*", "/admin", "/admin/*"] },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "ilea-poke", "database_id": "INSERISCI_ID_DATABASE_D1" }
+  ],
+  "vars": { "APP_ORIGIN": "", "RESTAURANT_NAME": "Ilèa Resort" }
+}

@@ -1,0 +1,6 @@
+ADMIN_PASSWORD=CAMBIA_CON_PASSWORD_LUNGA_E_UNICA
+SESSION_SECRET=INSERISCI_ALMENO_32_CARATTERI_CASUALI
+# Facoltativi, per avvisi email automatici (Resend)
+# RESEND_API_KEY=re_...
+# ORDER_NOTIFY_EMAIL=ristorante@example.com
+# EMAIL_FROM=Ordini Ilea <ordini@tuodominio.it>

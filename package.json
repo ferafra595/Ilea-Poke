@@ -1,0 +1,14 @@
+{
+  "name": "ilea-poke",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:local": "wrangler d1 execute ilea-poke --local --file=./schema.sql",
+    "db:remote": "wrangler d1 execute ilea-poke --remote --file=./schema.sql",
+    "check": "node --check worker.js && node --check public/app.js && node --check public/admin.js"
+  },
+  "devDependencies": {"wrangler": "^4.45.0"}
+}
