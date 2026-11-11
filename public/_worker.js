@@ -88,7 +88,6 @@ async function api(req,env){if(!env.DB)return fail('Database non collegato',503)
  return fail('Percorso non trovato',404);
 }
 export default {async fetch(req,env){try{const url=new URL(req.url);if(url.pathname.startsWith('/api/')){if(req.method==='OPTIONS')return new Response(null,{status:204});return await api(req,env);}
- if(url.pathname==='/admin'||url.pathname==='/admin/')return env.ASSETS.fetch(new Request(new URL('/admin.html',url),req));
  if(url.pathname==='/')return env.ASSETS.fetch(new Request(new URL('/index.html',url),req));
  return env.ASSETS.fetch(req);
  }catch(e){console.error('request error',e);return fail(e?.message==='Richiesta troppo grande'?e.message:'Errore interno. Riprova.',500);}}};
