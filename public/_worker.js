@@ -112,7 +112,7 @@ async function api(req,env){if(!env.DB)return fail('Database non collegato',503)
   if(!await sessionOk(req,env))return fail('Sessione scaduta. Effettua l’accesso.',401);
   if(p==='/api/admin/me'&&m==='GET')return out({ok:true});
   if(p==='/api/admin/logout'&&m==='POST'){const r=out({ok:true});r.headers.set('set-cookie',cookie('',req,0));return r;}
-  if(p==='/api/admin/bootstrap'&&m==='GET'){return out({settings:await settings(env.DB),categories:await catalog(env.DB,true),image_versions:await imageVersions(env.DB)});}
+  if(p==='/api/admin/bootstrap'&&m==='GET'){return out({settings:await settings(env.DB),categories:await catalog(env.DB,true),image_versions:await imageVersions(env.DB),ingredient_image_ids:(await env.DB.prepare('SELECT ingredient_id FROM ingredient_images').all()).results.map(x=>x.ingredient_id)});}
   if(p==='/api/admin/calendar-summary'&&m==='GET'){
     const from=text(url.searchParams.get('from'),10),to=text(url.searchParams.get('to'),10);
     if(!/^\d{4}-\d{2}-\d{2}$/.test(from)||!/^\d{4}-\d{2}-\d{2}$/.test(to)||to<from||((new Date(to)-new Date(from))/86400000)>45)return fail('Intervallo non valido');
@@ -193,8 +193,30 @@ async function api(req,env){if(!env.DB)return fail('Database non collegato',503)
   }
   if(p==='/api/admin/order-payment'&&m==='POST'){const b=await body(req),id=text(b.id,30);const o=await env.DB.prepare('SELECT status FROM orders WHERE public_id=?').bind(id).first();if(!o)return fail('Ordine non trovato',404);if(o.status!=='completed')return fail('Segna prima l’ordine come ritirato');await env.DB.prepare("UPDATE orders SET payment_status='paid',updated_at=? WHERE public_id=?").bind(utcNow(),id).run();await event(env.DB,id,'payment','unpaid','paid');return out({ok:true});}
   if(p==='/api/admin/order-whatsapp'&&m==='POST'){const b=await body(req);const id=text(b.id,30);const o=await env.DB.prepare('SELECT status FROM orders WHERE public_id=?').bind(id).first();if(!o)return fail('Ordine non trovato',404);if(!['accepted','preparing','ready','completed','no_show'].includes(o.status))return fail('Conferma prima l’ordine');await env.DB.prepare('UPDATE orders SET whatsapp_sent_at=?,updated_at=? WHERE public_id=?').bind(utcNow(),id).run();await event(env.DB,id,'whatsapp_opened',null,o.status);return out({ok:true});}
-  if(p==='/api/admin/ingredient'&&m==='POST'){const b=await body(req),id=text(b.id,70),i=await env.DB.prepare('SELECT * FROM ingredients WHERE id=?').bind(id).first();if(!i)return fail('Ingrediente non trovato',404);const name=text(b.name??i.name,100);if(!name)return fail('Nome richiesto');const available=b.available===undefined?i.available:(b.available?1:0),active=b.active===undefined?i.active:(b.active?1:0);const allergens=b.allergens===undefined?parse(i.allergens,[]):b.allergens;if(!Array.isArray(allergens)||allergens.length>20||allergens.some(x=>typeof x!=='string'||x.length>60))return fail('Allergeni non validi');await env.DB.prepare('UPDATE ingredients SET name=?,available=?,active=?,allergens=? WHERE id=?').bind(name,available,active,JSON.stringify(allergens),id).run();return out({ok:true});}
-  if(p==='/api/admin/ingredient-create'&&m==='POST'){const b=await body(req),cat=text(b.category_id,60),name=text(b.name,100);if(!name||!await env.DB.prepare('SELECT id FROM categories WHERE id=?').bind(cat).first())return fail('Categoria o nome non valido');const id=crypto.randomUUID();await env.DB.prepare('INSERT INTO ingredients(id,category_id,name,sort_order) VALUES(?,?,?,(SELECT COALESCE(MAX(sort_order),0)+1 FROM ingredients WHERE category_id=?))').bind(id,cat,name,cat).run();return out({ok:true,id});}
+  if(p==='/api/admin/ingredient'&&m==='POST'){
+    const b=await body(req),id=text(b.id,70),i=await env.DB.prepare('SELECT * FROM ingredients WHERE id=?').bind(id).first();
+    if(!i)return fail('Ingrediente non trovato',404);
+    const name=text(b.name??i.name,100),category_id=text(b.category_id??i.category_id,60);
+    if(!name)return fail('Nome ingrediente obbligatorio');
+    if(!await env.DB.prepare('SELECT id FROM categories WHERE id=?').bind(category_id).first())return fail('Categoria non valida');
+    const available=b.available===undefined?i.available:(b.available?1:0),active=b.active===undefined?i.active:(b.active?1:0);
+    const allergens=b.allergens===undefined?parse(i.allergens,[]):b.allergens;
+    if(!Array.isArray(allergens)||allergens.length>20||allergens.some(x=>typeof x!=='string'||x.length>60))return fail('Allergeni non validi');
+    await env.DB.prepare('UPDATE ingredients SET name=?,category_id=?,available=?,active=?,allergens=? WHERE id=?').bind(name,category_id,available,active,JSON.stringify(allergens),id).run();
+    return out({ok:true});
+  }
+  if(p==='/api/admin/ingredient-create'&&m==='POST'){
+    const b=await body(req),cat=text(b.category_id,60),name=text(b.name,100);
+    if(!name)return fail('Inserisci il nome ingrediente');
+    if(!await env.DB.prepare('SELECT id FROM categories WHERE id=?').bind(cat).first())return fail('Categoria non valida');
+    const allergens=b.allergens??[];
+    if(!Array.isArray(allergens)||allergens.length>20||allergens.some(x=>typeof x!=='string'||x.length>60))return fail('Allergeni non validi');
+    const duplicate=await env.DB.prepare('SELECT id FROM ingredients WHERE category_id=? AND lower(trim(name))=lower(?)').bind(cat,name).first();
+    if(duplicate)return fail('Un ingrediente con questo nome esiste già in questa categoria',409);
+    const id=crypto.randomUUID(),available=b.available===false?0:1,active=b.active===false?0:1;
+    await env.DB.prepare('INSERT INTO ingredients(id,category_id,name,available,active,allergens,sort_order) VALUES(?,?,?,?,?,?,(SELECT COALESCE(MAX(sort_order),0)+1 FROM ingredients WHERE category_id=?))').bind(id,cat,name,available,active,JSON.stringify(allergens),cat).run();
+    return out({ok:true,id},201);
+  }
   if(p==='/api/admin/site-image'&&m==='POST'){
     const len=Number(req.headers.get('content-length')||0);if(len>850000)return fail('Immagine troppo grande (massimo 500 KB)',413);
     const b=await req.json(),slot=text(b.slot,30),mime=text(b.mime,60),data=String(b.data||'');
