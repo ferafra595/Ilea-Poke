@@ -119,10 +119,20 @@ async function api(req,env){if(!env.DB)return fail('Database non collegato',503)
     const rows=(await env.DB.prepare(`SELECT pickup_date AS date,pickup_time AS time,status,COUNT(*) AS qty,SUM(total_cents) AS total FROM orders WHERE pickup_date BETWEEN ? AND ? GROUP BY pickup_date,pickup_time,status ORDER BY pickup_date,pickup_time`).bind(from,to).all()).results;
     return out({rows,blocked:parse((await settings(env.DB)).blocked_slots,{})});
   }
+  if(p==='/api/admin/manual-slots'&&m==='GET'){
+    const date=url.searchParams.get('date')||'';
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return fail('Data non valida');
+    const settingsAdmin={...(await settings(env.DB)),orders_enabled:'true'};
+    return out({date,slots:await getSlots(env.DB,date,settingsAdmin)});
+  }
   if(p==='/api/admin/manual-order'&&m==='POST'){
     const b=await body(req),s=await settings(env.DB),name=text(b.name,80),phone=normalizePhone(b.phone),d=text(b.date,10),t=text(b.time,5),notes=text(b.notes,400);
     if(name.length<2||!/^\+?[0-9]{8,15}$/.test(phone))return fail('Nome o telefono non valido');
     if(!/^\d{4}-\d{2}-\d{2}$/.test(d)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(t)||d<localParts().date||d>nextDay(localParts().date,60))return fail('Data o ora non valida');
+    // L'ordine manuale rispetta sempre il calendario e gli slot effettivamente disponibili.
+    // Non dipende dall'interruttore degli ordini online.
+    const allowed=await getSlots(env.DB,d,{...s,orders_enabled:'true'});
+    if(!allowed.some(slot=>slot.time===t))return fail('Orario non disponibile o fuori dal calendario del ristorante',409);
     const {items,total}=computeItems(b.items,(await catalog(env.DB,true)).filter(c=>c.active),s);
     const id=`IP-${crypto.randomUUID().slice(0,8).toUpperCase()}`;
     const cap=num(s.slot_capacity,1,100,5);
