@@ -219,3 +219,54 @@ html,body{width:100%;max-width:100%;overflow-x:clip}
 @media(max-width:1180px){.stats-kpi-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.stats-charts-v8{grid-template-columns:1fr}.stats-donut-layout{grid-template-columns:160px minmax(0,1fr)}.stats-donut{width:160px}}
 @media(max-width:720px){.stats-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.stats-kpi{padding:14px;gap:6px}.stats-kpi>strong{font-size:22px}.stats-charts-v8{grid-template-columns:minmax(0,1fr)}.stats-donut-layout{grid-template-columns:1fr;justify-items:center}.stats-legend{width:100%}.ingredient-editor{padding:16px}.reorder-parts{grid-template-columns:1fr}.reorder-order-top{align-items:flex-start;flex-wrap:wrap}.reorder-order-top .btn{min-height:42px}.ingredient-actions{justify-content:flex-start;width:100%}.ingredient{flex-direction:column;align-items:stretch}}
 @media(max-width:380px){.stats-kpi-grid{grid-template-columns:1fr 1fr}.stats-kpi>strong{font-size:19px}.stats-rank{grid-template-columns:minmax(0,1fr) 75px 28px;gap:7px}.ingredient-editor-actions{grid-template-columns:1fr}}
+
+/* Ilèa - ordine manuale intuitivo, allineato al configuratore pubblico */
+.ilea-manual-dialog{width:min(1020px,96vw);max-width:96vw;max-height:min(92dvh,980px);padding:24px;overflow-y:auto;overscroll-behavior:contain}
+.ilea-manual-dialog [hidden]{display:none!important}
+.ilea-manual-dialog .dialog-head{position:sticky;top:-24px;z-index:5;padding:14px 0 18px;margin-bottom:8px;border-bottom:1px solid #e3ebe0}
+.manual-phone{display:flex;align-items:stretch;min-width:0;border:1px solid #dce5d9;border-radius:11px;overflow:hidden;background:#fff}
+.manual-phone span{display:grid;place-items:center;padding:0 15px;background:#edf2e9;border-right:1px solid #dce5d9;white-space:nowrap;font-weight:750;color:#34543c}
+.manual-phone input{border:0!important;box-shadow:none!important;border-radius:0!important;min-width:0;flex:1;outline:none;padding:13px;font-size:16px}
+.manual-customer{border-bottom:1px solid #e3ebe0;margin-bottom:22px;padding-bottom:14px}
+.manual-build-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:0 0 14px}
+.manual-build-head h3{font-size:27px;margin:4px 0 6px}
+.manual-build-head p{margin:0}
+.manual-price{white-space:nowrap;font-size:25px;font-weight:850;color:#254633}
+.manual-progress{display:flex;gap:7px;margin:18px 0}
+.manual-progress button{height:36px;min-width:0;flex:1;border-radius:10px;border:1px solid #d8e3d6;background:#f1f5ee;color:#426148;font-weight:750}
+.manual-progress button.active{color:white;background:#405f48}
+.manual-progress button.done{background:#d9e9d5}
+.manual-cat-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:15px}
+.manual-cat-head h4{font-size:20px;margin:0 0 4px}
+.manual-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+.manual-option{min-height:87px;display:flex;align-items:center;gap:10px;border:1px solid #dfe8dc;border-radius:14px;padding:10px;background:#fff;cursor:pointer;min-width:0;transition:border-color .15s,background .15s}
+.manual-option:hover,.manual-option:focus-visible{border-color:#7a9a79;outline:0;box-shadow:0 0 0 2px #c8dfc5}
+.manual-option.active{background:#f0f7ec;border-color:#779979}
+.manual-check{width:19px;height:19px;border:1px solid #bdcbbc;border-radius:6px;display:grid;place-items:center;flex:none;color:white;font-size:13px}
+.manual-option.active .manual-check{background:#5a795d;border-color:#5a795d}
+.manual-option-name{flex:1;min-width:0;font-weight:700;line-height:1.3;font-size:13px;overflow-wrap:anywhere}
+.manual-option-name small{display:block;font-size:11px;font-weight:400;color:#65796a;margin-top:4px}
+.manual-option .ingredient-thumb{width:58px;height:58px;flex:0 0 58px}
+.manual-choose{padding:9px 10px;border-radius:9px;background:#edf2e8;color:#3c5d40;font-size:12px;font-weight:750;flex:none}
+.manual-qty{display:flex;align-items:center;gap:6px;flex:none}
+.manual-qty b{min-width:16px;text-align:center}
+.manual-qty .qtybtn{width:32px;height:34px;flex:none}
+.manual-footer{margin-top:24px;padding-top:16px;border-top:1px solid #e3ebe0}
+.manual-total{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:14px 0;font-size:15px;font-weight:650}
+.manual-total strong{font-size:22px}
+.manual-step-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:14px}
+.manual-step-actions .btn{min-height:46px}
+@media(max-width:720px){
+ .ilea-manual-dialog{width:calc(100vw - 16px);max-width:calc(100vw - 16px);height:min(92dvh,1000px);max-height:92dvh;padding:15px;border-radius:22px}
+ .ilea-manual-dialog .dialog-head{top:-15px;padding:12px 0 14px}
+ .manual-cards{grid-template-columns:minmax(0,1fr)}
+ .manual-option{min-height:70px;padding:9px;gap:8px}
+ .manual-option .ingredient-thumb{width:49px;height:49px;flex-basis:49px}
+ .manual-option-name{font-size:13px}
+ .manual-qty .qtybtn{width:32px;height:36px}
+ .manual-build-head h3{font-size:22px}
+ .manual-price{font-size:21px}
+ .manual-step-actions{display:grid;grid-template-columns:1fr 1fr}
+ .manual-step-actions button{width:100%;font-size:13px;padding:11px 7px}
+ .manual-footer .formgrid,.ilea-manual-dialog .formgrid{grid-template-columns:minmax(0,1fr)}
+}
