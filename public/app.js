@@ -63,14 +63,14 @@ function orderCompositionHTML(o){
 function renderReorder(){
  const box=document.querySelector('#reorderBox');if(!box)return;
  let stored=null;try{stored=JSON.parse(localStorage.getItem('ilea_last_order')||'null');}catch{}
- box.innerHTML=`<div class="reorder-header"><div><span class="pill">RIORDINA</span><h2>Ritrova i tuoi ordini</h2><p class="sub">Rivedi ingredienti e composizione dei tuoi Poké precedenti e riordinali in pochi clic.</p></div></div><div class="reorder-fields"><input id="reorderPhone" type="tel" autocomplete="tel" placeholder="+39 333 1234567" value="+39 " aria-label="Numero WhatsApp"><button class="btn" id="lookupOrders">Visualizza ordini</button></div><div id="reorderResult" aria-live="polite"></div>${stored?.token?'':'<p class="muted">Per proteggere i tuoi dati, lo storico è accessibile dal dispositivo con cui hai già effettuato un ordine. Il solo numero telefonico non è sufficiente.</p>'}`;
+ box.innerHTML=`<div class="reorder-header"><div><span class="pill">RIORDINA</span><h2>Ritrova i tuoi ordini</h2><p class="sub">Apri uno storico verificato, controlla ogni ingrediente e riordina. Nel carrello puoi modificare le quantità e gli ingredienti prima di inviare la richiesta.</p></div></div><div class="reorder-fields"><input id="reorderPhone" type="tel" autocomplete="tel" placeholder="+39 333 1234567" value="+39 " aria-label="Numero WhatsApp"><button class="btn" id="lookupOrders">Visualizza ordini</button></div><div id="reorderResult" aria-live="polite"></div>${stored?.token?'':'<p class="muted">Per proteggere i tuoi dati, lo storico è accessibile dal dispositivo con cui hai già effettuato un ordine. Il solo numero telefonico non è sufficiente.</p>'}`;
  box.querySelector('#lookupOrders').onclick=async()=>{
   const result=box.querySelector('#reorderResult');result.textContent='Caricamento dei tuoi ordini…';
   if(!stored?.token){result.textContent='Nessun ordine verificabile su questo dispositivo. Usa il dispositivo di un ordine precedente.';return;}
   try{
    const data=await request('/api/public/history',{method:'POST',body:JSON.stringify({phone:box.querySelector('#reorderPhone').value,token:stored.token})});
    const labels={completed:'Consegnato',cancelled:'Annullato',rejected:'Annullato',no_show:'Non ritirato',pending:'In attesa',accepted:'Confermato',preparing:'Confermato',ready:'Confermato'};
-   result.innerHTML=data.orders.map((o,i)=>`<article class="reorder-order"><div class="reorder-order-top"><div><strong>${esc(o.date)} · ${esc(o.time||'')}</strong><div class="muted">${o.items.reduce((n,x)=>n+(Number(x.quantity)||0),0)} Poké · ${euro(o.total_cents)} · ${labels[o.status]||esc(o.status)}</div></div><button class="btn small light" type="button" data-repeat="${i}">Riordina</button></div>${orderCompositionHTML(o)}</article>`).join('')||'<p class="muted">Nessun ordine trovato.</p>';
+   result.innerHTML=`<section class="reorder-customer-profile"><div class="eyebrow">LA TUA SCHEDA CLIENTE</div><h3>${esc(data.customer_name||'Cliente')}</h3><p class="muted">${esc(data.phone||'')} · ${data.orders.length} ordini disponibili · Prezzi e ingredienti verificati al riordino</p></section>`+data.orders.map((o,i)=>`<article class="reorder-order"><div class="reorder-order-top"><div><strong>${esc(o.date)} · ${esc(o.time||'')}</strong><div class="muted">${o.items.reduce((n,x)=>n+(Number(x.quantity)||0),0)} Poké · ${euro(o.total_cents)} · ${labels[o.status]||esc(o.status)}</div></div><button class="btn small light" type="button" data-repeat="${i}">Riordina</button></div><details ${i===0?'open':''}><summary>Ingredienti e composizione</summary>${orderCompositionHTML(o)}</details><p class="muted">Puoi modificare ingredienti, extra e quantità dal carrello prima di inviare.</p></article>`).join('')||'<p class="muted">Nessun ordine trovato.</p>';
    result.querySelectorAll('[data-repeat]').forEach(btn=>btn.onclick=()=>{
     const o=data.orders[Number(btn.dataset.repeat)],prepared=[],skipped=[];
     for(const old of o.items||[]){
@@ -86,6 +86,22 @@ function renderReorder(){
  };
 }
 
-async function start(){try{config=await request('/api/public/config');config.ingredient_image_ids=config.ingredient_image_ids||[];$('#heroTitle').textContent=config.settings.hero_title;$('#heroSubtitle').textContent=config.settings.hero_subtitle;renderPublicContact();renderReorder();
+function renderModeNotice(){
+ const hero=document.querySelector('.hero');if(!hero||document.querySelector('#fulfillmentGuide'))return;
+ const d=config.delivery||{},zones=config.delivery_zones||[];
+ const available=Boolean(d.open&&zones.length);
+ const message=available?`Domicilio ordinabile ora nelle zone servite, dalle ${d.start} alle ${d.end}. Sceglierai la fascia di consegna al termine.`:d.enabled&&zones.length?`Domicilio richiedibile dalle ${d.start} alle ${d.end} (ora italiana). Fuori orario resta disponibile il ritiro.`:'Consegne temporaneamente non disponibili. Puoi sempre richiedere il ritiro negli orari del locale.';
+ const wrapper=document.createElement('div');wrapper.id='fulfillmentGuide';wrapper.className='hero-method-guide';
+ wrapper.innerHTML=`<h3>Come preferisci ricevere il Poké?</h3><div class="hero-method-choices"><button type="button" data-early-mode="pickup" class="active">🏠 Ritiro al ristorante</button><button type="button" data-early-mode="delivery" ${available?'':'disabled'}>🛵 Domicilio</button></div><p class="hero-method-notice">${esc(message)}</p>`;
+ hero.querySelector('div')?.append(wrapper);
+ wrapper.querySelectorAll('[data-early-mode]').forEach(b=>b.onclick=()=>{
+  if(b.disabled)return;
+  deliveryMode=b.dataset.earlyMode;
+  wrapper.querySelectorAll('[data-early-mode]').forEach(x=>x.classList.toggle('active',x===b));
+  if(cart.length){chosenTime='';renderCheckout();}
+  document.querySelector('#ordina')?.scrollIntoView({behavior:'smooth',block:'start'});
+ });
+}
+async function start(){try{config=await request('/api/public/config');config.ingredient_image_ids=config.ingredient_image_ids||[];$('#heroTitle').textContent=config.settings.hero_title;$('#heroSubtitle').textContent=config.settings.hero_subtitle;renderPublicContact();renderReorder();renderModeNotice();
  const v=config.settings.image_versions||{};if(v.hero)document.querySelector('.hero-art')?.classList.add('has-photo');const sec=document.querySelector('#footerSecondary');if(sec&&v.secondary){sec.hidden=false;sec.src='/api/public/image?slot=secondary&v='+encodeURIComponent(v.secondary);}document.querySelectorAll('[data-site-image]').forEach(img=>{const slot=img.dataset.siteImage;img.src='/api/public/image?slot='+encodeURIComponent(slot)+'&v='+encodeURIComponent(v[slot]||'default');});$('#year').textContent=new Date().getFullYear();if(!config.settings.orders_enabled){$('#closedBanner').classList.remove('hidden');$('#closedBanner').textContent='Gli ordini online non sono ancora attivi. Il ristorante sta configurando il servizio.';}renderCategories();renderSummary();}catch(e){$('#configurator').innerHTML=`<p class="error">Impossibile caricare il menù: ${esc(e.message)}</p>`;}}
 start();
