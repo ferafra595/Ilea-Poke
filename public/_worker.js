@@ -174,22 +174,50 @@ async function api(req,env){if(!env.DB)return fail('Database non collegato',503)
     if(!r.meta.changes)return fail('Slot occupato o ordine già aggiornato',409);await event(env.DB,id,'rescheduled',o.pickup_date+' '+o.pickup_time,d+' '+t);return out({ok:true});
   }
   if(p==='/api/admin/delivery-plan'&&m==='GET'){
-    const date=text(url.searchParams.get('date'),10);if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return fail('Data non valida');
+    const date=text(url.searchParams.get('date'),10);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return fail('Data non valida');
     const s=await settings(env.DB),gap=num(s.delivery_gap_minutes,5,60,15),allZones=await zones(env.DB,true);
     const rows=(await env.DB.prepare(`SELECT public_id,customer_name,phone,pickup_date,pickup_time,delivery_zone_id,delivery_address_json,delivery_planned_time,delivery_plan_confirmed_at,status,created_at,items_json FROM orders WHERE pickup_date=? AND fulfillment_type='delivery' AND status IN ('pending','accepted','preparing','ready') ORDER BY pickup_time,created_at`).bind(date).all()).results;
     const now=localParts(),canConfirm=date===now.date&&now.time>(s.delivery_order_end||'19:30');
-    const plan=makeDeliveryPlan(rows,allZones,gap,canConfirm?minOf(now.time):null).map(x=>({id:x.public_id,name:x.customer_name,phone:x.phone,requested_time:x.pickup_time,estimated_time:x.estimated_time,previous_plan:x.delivery_planned_time,confirmed_at:x.delivery_plan_confirmed_at,zone_id:x.delivery_zone_id,zone_name:allZones.find(z=>z.id===x.delivery_zone_id)?.name||'Zona rimossa',address:parse(x.delivery_address_json,{}),bowls:bowlCount(parse(x.items_json,[])),sequence:x.sequence,delay_minutes:x.delay_minutes,next_day:x.next_day}));
-    return out({date,gap,can_confirm:canConfirm,cutoff:s.delivery_order_end||'19:30',plan,warning:'Gli orari sono stime operative, non un calcolo del percorso stradale. Comunicare al cliente ogni variazione.'});
+    const allApplied=rows.length>0&&rows.every(x=>x.delivery_plan_confirmed_at);
+    const partialApplied=rows.some(x=>x.delivery_plan_confirmed_at)&&!allApplied;
+    const computed=allApplied?rows.map((r,i)=>({...r,estimated_time:r.pickup_time,sequence:i+1,delay_minutes:0,next_day:false})):
+      makeDeliveryPlan(rows,allZones,gap,canConfirm?minOf(now.time):null);
+    // Store the source time in an existing event, without changing the D1 schema.
+    const previous=allApplied?(await env.DB.prepare(`SELECT order_id,old_value FROM order_events WHERE event_type='delivery_route_set' AND order_id IN (SELECT public_id FROM orders WHERE pickup_date=? AND fulfillment_type='delivery') ORDER BY id DESC`).bind(date).all()).results:[];
+    const previousTimes=new Map();for(const x of previous)if(!previousTimes.has(x.order_id))previousTimes.set(x.order_id,x.old_value);
+    const plan=computed.map(x=>({id:x.public_id,name:x.customer_name,phone:x.phone,requested_time:previousTimes.get(x.public_id)||x.pickup_time,estimated_time:x.estimated_time,previous_plan:x.delivery_planned_time,confirmed_at:x.delivery_plan_confirmed_at,zone_id:x.delivery_zone_id,zone_name:allZones.find(z=>z.id===x.delivery_zone_id)?.name||'Zona rimossa',address:parse(x.delivery_address_json,{}),bowls:bowlCount(parse(x.items_json,[])),sequence:x.sequence,delay_minutes:allApplied?Math.max(0,minOf(x.estimated_time)-minOf(previousTimes.get(x.public_id)||x.pickup_time)):x.delay_minutes,next_day:x.next_day}));
+    // Fingerprint makes the preview explicit; if orders or times change, ask to recalculate.
+    const revision=await hash(JSON.stringify(rows.map(x=>[x.public_id,x.pickup_time,x.status,x.delivery_plan_confirmed_at,x.items_json])));
+    return out({date,gap,can_confirm:canConfirm&&!allApplied&&!partialApplied,already_applied:allApplied,partial_applied:partialApplied,revision,cutoff:s.delivery_order_end||'19:30',plan,warning:'Il piano è una stima operativa: verifica il percorso e comunica ai clienti ogni variazione di orario.'});
   }
   if(p==='/api/admin/delivery-plan'&&m==='POST'){
-    const b=await body(req),date=text(b.date,10),now=localParts(),s=await settings(env.DB);if(date!==now.date||now.time<=(s.delivery_order_end||'19:30'))return fail('Conferma disponibile solo dopo la chiusura degli ordini domicilio del giorno',409);
+    const b=await body(req),date=text(b.date,10),now=localParts(),s=await settings(env.DB);
+    if(date!==now.date||now.time<=(s.delivery_order_end||'19:30'))return fail('Il giro può essere impostato solo dopo la chiusura degli ordini a domicilio del giorno',409);
     const gap=num(s.delivery_gap_minutes,5,60,15),allZones=await zones(env.DB,true);
-    const rows=(await env.DB.prepare(`SELECT public_id,pickup_time,delivery_zone_id,created_at FROM orders WHERE pickup_date=? AND fulfillment_type='delivery' AND status IN ('pending','accepted','preparing','ready') ORDER BY pickup_time,created_at`).bind(date).all()).results;
+    const rows=(await env.DB.prepare(`SELECT public_id,pickup_date,pickup_time,delivery_zone_id,delivery_plan_confirmed_at,status,created_at,items_json FROM orders WHERE pickup_date=? AND fulfillment_type='delivery' AND status IN ('pending','accepted','preparing','ready') ORDER BY pickup_time,created_at`).bind(date).all()).results;
     if(!rows.length)return fail('Nessuna consegna da pianificare',409);
+    if(rows.every(x=>x.delivery_plan_confirmed_at))return fail('Questo giro è già stato impostato. Non verranno cambiati di nuovo gli orari.',409);
+    if(rows.some(x=>x.delivery_plan_confirmed_at))return fail('Alcuni ordini hanno già un giro impostato. Gestisci gli orari singolarmente prima di creare un nuovo giro.',409);
+    const revision=await hash(JSON.stringify(rows.map(x=>[x.public_id,x.pickup_time,x.status,x.delivery_plan_confirmed_at,x.items_json])));
+    if(b.revision!==revision)return fail('Gli ordini sono cambiati. Premi Calcola giro e verifica il piano aggiornato.',409);
     const plan=makeDeliveryPlan(rows,allZones,gap,minOf(now.time));
-    if(plan.some(x=>x.next_day))return fail('Il giro supera la mezzanotte: modifica le consegne o gli intervalli prima di confermare.',409);
-    await env.DB.batch(plan.map(x=>env.DB.prepare('UPDATE orders SET delivery_planned_time=?,delivery_plan_confirmed_at=?,updated_at=? WHERE public_id=?').bind(x.estimated_time,utcNow(),utcNow(),x.public_id)));
-    return out({ok:true,count:plan.length,changed:plan.filter(x=>x.estimated_time!==x.pickup_time).length,message:'Piano operativo salvato. Comunica ai clienti gli orari proposti; non vengono inviati messaggi automatici.'});
+    if(plan.some(x=>x.next_day))return fail('Il giro supera la mezzanotte: modifica gli orari prima di impostarlo.',409);
+    const cap=num(s.slot_capacity,1,500,20);
+    const group=new Map();for(const x of plan){const qty=bowlCount(parse(x.items_json,[]));group.set(x.estimated_time,(group.get(x.estimated_time)||0)+qty);}
+    // Check available bowl capacity against orders not included in this route.
+    const ids=new Set(rows.map(x=>x.public_id));
+    const otherOrders=(await env.DB.prepare(`SELECT public_id,pickup_time,items_json FROM orders WHERE pickup_date=? AND status IN ('pending','accepted','preparing','ready')`).bind(date).all()).results;
+    for(const [time,qty] of group){let other=0;for(const x of otherOrders)if(!ids.has(x.public_id)&&x.pickup_time===time)other+=bowlCount(parse(x.items_json,[]));if(other+qty>cap)return fail(`Lo slot ${time} supera il limite di ${cap} Poké (già prenotati: ${other}; giro: ${qty}). Correggi prima di impostare il giro.`,409);}
+    // The planned times are committed in the same transaction as the official times and audit entries.
+    const stamp=utcNow(),statements=[];
+    for(const x of plan){
+      statements.push(env.DB.prepare(`UPDATE orders SET pickup_time=?,delivery_planned_time=?,delivery_plan_confirmed_at=?,updated_at=? WHERE public_id=? AND pickup_date=? AND pickup_time=? AND delivery_plan_confirmed_at IS NULL AND status IN ('pending','accepted','preparing','ready')`).bind(x.estimated_time,x.estimated_time,stamp,stamp,x.public_id,date,x.pickup_time));
+      statements.push(env.DB.prepare(`INSERT INTO order_events(order_id,event_type,old_value,new_value) SELECT ?,'delivery_route_set',?,? WHERE (SELECT delivery_plan_confirmed_at FROM orders WHERE public_id=?)=?`).bind(x.public_id,x.pickup_time,x.estimated_time,x.public_id,stamp));
+    }
+    const results=await env.DB.batch(statements);
+    if(results.some((r,i)=>i%2===0&&r.meta?.changes!==1))return fail('Un ordine è cambiato durante il salvataggio: ricontrolla il giro.',409);
+    return out({ok:true,count:plan.length,changed:plan.filter(x=>x.estimated_time!==x.pickup_time).length,message:'Giro impostato: orari aggiornati negli ordini, nelle comande e nei messaggi WhatsApp. Avvisa i clienti delle variazioni.'});
   }
   if(p==='/api/admin/stats'&&m==='GET'){
     const from=text(url.searchParams.get('from'),10),to=text(url.searchParams.get('to'),10);
